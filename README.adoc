@@ -1,0 +1,96 @@
+= Feed Action
+
+This feed action is responsible for creating the Infinispan cach listener and associating it with a Trigger
+
+[[pre-req]]
+= Pre-requisite
+
+* Deploy https://github.com/infinispan/infinispan-openshift-templates[Infinispan on OpenShift]
+* Deploy https://github.com/kameshsampath/openwhisk-openshift#installing-on-minishift[OpenWhisk on Minishift]
+
+[IMPORTANT]
+====
+* For all the CLI commands to work as it is, deploy OpenWhisk to a OpenShift Project
+called `openwhisk`
+* Deploy applications infinispan and infinispan-feed-provider to `myproject` workspace
+* make user `developer` as admin for both these projects via
+[code,sh]
+----
+ oc adm policy add-role-to-user admin developer -n openwhisk
+----
+====
+
+== Build and Deploy
+
+[[create-package]]
+=== Create Package
+
+[code,sh]
+----
+wsk -i package create --shared yes redhatdevelopers <1>
+----
+
+<1> this could be anything, if you change it please update link:./pom.xml[pom.xml] `openwhisk.package`
+property
+
+[[create-feed-action]]
+=== Create Feed Action
+[code,sh]
+----
+mvn clean package <1>
+wsk -i action update -a feed true redhatdevelopers/infinispan-feed \
+ target/infinispan-feed-action.jar --main org.workspace7.openwhisk.InfinispanFeedAction
+----
+<1> if you have https://github.com/apache/incubator-openwhisk-cli[WSK CLI] installed, post package
+
+
+[[create-trigger]]
+=== Create Trigger
+
+==== Pre-requisite
+
+You will need to deploy the https://github.com/kameshsampath/infinispan-feed-provider[Infinispan Feed Provider] before creating the trigger.
+Refer to the https://github.com/kameshsampath/infinispan-feed-provider[README] on the deployment.
+
+==== Create Trigger, Action and Rule
+
+[code,sh]
+----
+wsk -i trigger create cacheEntryTrigger --feed redhatdevelopers/infinispan-feed \
+		-p hotrod_server_host infinispan-app-hotrod \ <1>
+		-p hotrod_port 11222 \ <2>
+		-p cache_name default <3>
+
+wsk action create cacheEntryTriggerAction handler.js <4>
+wsk rule create cacheEntryRule cacheEntryTrigger cacheEntryTriggerAction <5>
+----
+
+<1> If you deployed Infinispan using method referenced in <<pre-req>>, then the default hostname
+is **infinispan-app-hotrod** and by default this is accessible only from within OpenShift cluster
+<2> The HotRod Client Port to connect to
+<3> The Cache Name for which the listener to be registered
+<4> Create a dummy action just to see what parameters are sent via the event source
+<5> Associate the Trigger with Action via a rule
+
+[TIP]
+====
+* Whenever you delete and recreate trigger, you need to enable the rule via
+  `wsk -i rule enable cacheEntryRule`.  As deleting trigger will disable any
+  active rules associated with it
+====
+
+=== Testing Application
+
+https://github.com/kameshsampath/infinispan-feed-provider[Infinispan Feed Provider] provides
+a REST path called `/data/add/{key}` which can be used to add dummy entry to see
+the cache entry event triggering the **cacheEntryTriggerAction**
+
+[code,sh]
+----
+curl -X GET  --data "hello world"  $(minishift openshift service infinispan-feed-provider -n myproject --url)/data/add/testKey2018 <1>
+wsk activation list -limit 1 cacheEntryTriggerAction <2>
+wsk activation result <activation-id> <3>
+----
+<1> Add a test cache entry, this by default adds to `default` cache
+<2> Check if the cacheEntryTriggerAction action is triggered as a result of cache entry addition
+<3> Check what payload the cacheEntryTriggerAction  has recevied
