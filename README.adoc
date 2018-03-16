@@ -61,7 +61,7 @@ wsk -i trigger create cacheEntryTrigger --feed redhatdevelopers/infinispan-feed 
 		-p hotrod_port 11222 \ <2>
 		-p cache_name default <3>
 
-wsk action create cacheEntryTriggerAction handler.js <4>
+wsk action create cacheEntryTriggerAction src/handler.js <4>
 wsk rule create cacheEntryRule cacheEntryTrigger cacheEntryTriggerAction <5>
 ----
 
